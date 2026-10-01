@@ -1,0 +1,413 @@
+---
+title: "Project 3"
+output: html_document
+date: "2026-09-24"
+---
+
+```{r}
+setwd('/Users/hwangsuyeon/Desktop/석사/석사 4학기/이통2/Project 3')
+```
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(patchwork)
+```
+
+```{r}
+# load complete Life Table
+Original_lifetable <- read_excel('Complete_LifetimeTable.xlsx', skip=1)
+
+lifeTable2010 <- Original_lifetable %>% select("연령별",
+                              "생존자(남자)", "생존자(여자)",
+                              "사망자(남자)", "사망자(여자)",
+                              "사망확률(남자)", "사망확률(여자)",
+                              "기대여명(남자) (년)", "기대여명(여자) (년)",
+                              "정지인구(남자)", "정지인구(여자)"
+                              )
+colnames(lifeTable2010) <- c("Age", "l.0", "l.1", "d.0", "d.1", "q.0", "q.1", "e.0", "e.1", "L.0", "L.1")
+lifeTable2010
+```
+
+```{r}
+lifeTable2010$Age <- gsub("이상", "", lifeTable2010$Age)
+lifeTable2010$Age  <- gsub("세", "", lifeTable2010$Age )
+lifeTable2010$Age  <- as.integer(lifeTable2010$Age)
+
+lifeTable2010
+```
+
+# a) 시계열 도표
+
+### 생존자 수
+
+```{r}
+lifeTable2010 %>% 
+  ggplot(aes(x = Age)) +
+  geom_line(aes(y = l.0, color = "Male"), size = 0.8) +
+  geom_line(aes(y = l.1, color = "Female"), size = 0.8) +
+  scale_color_manual(
+    name = "Gender", values = c("Male" = "black", "Female" = "red")
+  ) +
+  labs(title="Time-Series Plot of Survivors", y='count') +
+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 사망자수
+
+```{r}
+lifeTable2010 %>% 
+  ggplot(aes(x = Age)) +
+  geom_line(aes(y = d.0, color = "Male"), size = 0.8) +
+  geom_line(aes(y = d.1, color = "Female"), size = 0.8) +
+  scale_color_manual(
+    name = "Gender", values = c("Male" = "black", "Female" = "red")
+  ) +
+  labs(title="Time-Series Plot of the number of deaths", y='count') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 사망할 확률
+
+```{r}
+lifeTable2010 %>% 
+  ggplot(aes(x = Age)) +
+  geom_line(aes(y = q.0, color = "Male"), size = 0.8) +
+  geom_line(aes(y = q.1, color = "Female"), size = 0.8) +
+  scale_color_manual(
+    name = "Gender", values = c("Male" = "black", "Female" = "red")
+  ) +
+  labs(title="Time-Series Plot of the Prob. of Death", y='prob.') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### 기대여명
+
+```{r}
+lifeTable2010 %>% 
+  ggplot(aes(x = Age)) +
+  geom_line(aes(y = e.0, color = "Male"), size = 0.8) +
+  geom_line(aes(y = e.1, color = "Female"), size = 0.8) +
+  scale_color_manual(
+    name = "Gender", values = c("Male" = "black", "Female" = "red")
+  ) +
+  labs(title="Time-Series Plot of Remaining Life Expectancy", y='years') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# b) 남녀 간 사망확률의 비의 시계열 도표
+
+```{r}
+lifeTable2010 %>% 
+  mutate(ratio=q.1/q.0) %>%
+  ggplot(aes(x=Age))+
+  geom_line(aes(y=ratio), color='darkblue', size=0.8)+ 
+  labs(title="Time-Series Plot of q1/q0") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# c) 남녀 별 log-사망확률 및 log-사망율의 시계열 도표
+
+## 1) log-사망확률
+
+```{r}
+lifeTable2010 %>% 
+  mutate(lnq1=log(q.1), lnq0=log(q.0)) %>%
+  ggplot(aes(x = Age)) +
+  geom_line(aes(y=lnq0, color = "Male"), size = 0.8) +
+  geom_line(aes(y=lnq1, color = "Female"), size = 0.8) +
+  scale_color_manual(
+    name = "Gender", values = c("Male" = "black", "Female" = "red")
+  ) +
+  labs(title="Time-Series Plot of log(prob. of Death)", y='log(prob)') +  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## 2) log-사망율
+
+```{r}
+lifeTable2010 %>% 
+mutate(
+  lnm0 = log(d.0 /L.0),
+  lnm1 = log(d.1 /L.1)
+) %>%
+  ggplot(aes(x = Age)) +
+  geom_line(aes(y=lnm0, color = "Male"), size = 0.8) +
+  geom_line(aes(y=lnm1, color = "Female"), size = 0.8) +
+  scale_color_manual(
+    name = "Gender", values = c("Male" = "black", "Female" = "red")
+  ) +
+  labs(title="Time-Series Plot of log(mortality rate)", y='log(mortality rate)') +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# d) 지난 20년간 남녀별 사망률의 변화추이
+
+```{r}
+## load complete Life Table
+Original2001 <- read_excel('Complete_LifetimeTable2001.xlsx', skip=1)
+Original2020 <- read_excel('Complete_LifetimeTable2020.xlsx', skip=1)
+
+process_lifeTable <- function(originalDf){
+  lifeTable <- originalDf %>% select("연령별",
+                              "생존자(남자)", "생존자(여자)",
+                              "사망자(남자)", "사망자(여자)",
+                              "사망확률(남자)", "사망확률(여자)",
+                              "기대여명(남자) (년)", "기대여명(여자) (년)",
+                              "정지인구(남자)", "정지인구(여자)")
+  colnames(lifeTable) <- c("Age", "l.0", "l.1", "d.0", "d.1", "q.0", "q.1", "e.0", "e.1", "L.0", "L.1")
+  
+  lifeTable$Age <- gsub("이상", "", lifeTable$Age)
+  lifeTable$Age  <- gsub("세", "", lifeTable$Age )
+  lifeTable$Age  <- as.integer(lifeTable$Age)
+  return(lifeTable)
+}
+
+lifeTable2001 <- process_lifeTable(Original2001)
+lifeTable2020 <- process_lifeTable(Original2020)
+```
+
+### log-사망확률 
+
+```{r}
+# log-사망확률 : 2001
+g1 <- lifeTable2001 %>% 
+  mutate(lnq1=log(q.1), lnq0=log(q.0)) %>%
+  ggplot(aes(x=Age))+
+  geom_line(aes(y=lnq0, color = "Male"), size = 0.8) +
+  geom_line(aes(y=lnq1, color = "Female"), size = 0.8) +
+  scale_color_manual(name = "Gender", values = c("Male" = "black", "Female" = "red")) +
+  labs(title="2001 Time-Series Plot of log(prob. of Death)", y='log(prob)') +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# log-사망확률 : 2010
+g2 <- lifeTable2010 %>% 
+  mutate(lnq1=log(q.1), lnq0=log(q.0)) %>%
+  ggplot(aes(x=Age))+
+  geom_line(aes(y=lnq0, color = "Male"), size = 0.8) +
+  geom_line(aes(y=lnq1, color = "Female"), size = 0.8) +
+  scale_color_manual(name = "Gender", values = c("Male" = "black", "Female" = "red")) +
+  labs(title="2010 Time-Series Plot of log(prob. of Death)", y='log(prob)') +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# log-사망확률 : 2020
+g3 <- lifeTable2020 %>% 
+  mutate(lnq1=log(q.1), lnq0=log(q.0)) %>%
+  ggplot(aes(x=Age))+
+  geom_line(aes(y=lnq0, color = "Male"), size = 0.8) +
+  geom_line(aes(y=lnq1, color = "Female"), size = 0.8) +
+  scale_color_manual(name = "Gender", values = c("Male" = "black", "Female" = "red")) +
+  labs(title="2020 Time-Series Plot of log(prob. of Death)", y='log(prob)') +
+  theme(plot.title = element_text(hjust = 0.5))
+
+(g1 + g2 + g3) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+### 남녀별 사망률의 변화추이
+
+```{r}
+df_plot <- data.frame(Age=lifeTable2001$Age,
+                      q0.2001=lifeTable2001$q.0, q1.2001=lifeTable2001$q.1,
+                      q0.2010=lifeTable2010$q.0, q1.2010=lifeTable2010$q.1,
+                      q0.2020=lifeTable2020$q.0, q1.2020=lifeTable2020$q.1
+                      )
+g4 <- df_plot %>% 
+  mutate(lnq2001=log(q1.2001),lnq2010=log(q1.2010),lnq2020=log(q1.2020)) %>%
+  ggplot(aes(x=Age))+
+  geom_line(aes(y=lnq2001), color='skyblue', size=0.8)+ # 2001
+  geom_line(aes(y=lnq2010), color='blue', size=0.8) + # 2010
+  geom_line(aes(y=lnq2020), color='darkblue', size=0.8) + # 2020
+  labs(title="Time-Series Plot of log(prob. of Death) : Female", y='log(prob)') +
+  theme(plot.title = element_text(hjust = 0.5))
+
+g5 <- df_plot %>% 
+  mutate(lnq2001=log(q0.2001),lnq2010=log(q0.2010),lnq2020=log(q0.2020)) %>%
+  ggplot(aes(x=Age))+
+  geom_line(aes(y=lnq2001), color='skyblue', size=0.8)+ # 2001
+  geom_line(aes(y=lnq2010), color='blue', size=0.8) + # 2010
+  geom_line(aes(y=lnq2020), color='darkblue', size=0.8) + # 2020
+  labs(title="Time-Series Plot of log(prob. of Death) : Man", y='log(prob)') +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+g4 + g5
+```
+
+# e) Gompertz 법칙의 성립 여부
+
+```{r}
+lifeTable2010_20 <- lifeTable2010 %>% 
+  mutate(m.0=d.0/L.0, m.1=d.1/L.1) %>%
+  filter(Age>20)
+
+# Gompertz 회귀모형
+lm.M <- lm(log(m.0) ~ Age, data = lifeTable2010_20)
+lm.F <- lm(log(m.1) ~ Age, data = lifeTable2010_20)
+
+# (a, b)
+a_m <- coef(lm.M)[1]
+b_m <- coef(lm.M)[2]
+
+a_f <- coef(lm.F)[1]
+b_f <- coef(lm.F)[2]
+
+coef.e <- data.frame(
+  Sex = c("M", "F"),
+  a = round(c(a_m, a_f), 4),
+  b = round(c(b_m, b_f), 4)
+)
+
+coef.e
+```
+```{r}
+lifeTable2010_20 <- lifeTable2010_20 %>%
+  mutate(
+    gom_m.0 = exp(a_m + b_m * Age),
+    gom_m.1 = exp(a_f + b_f * Age)
+  )
+
+g1 <- ggplot(lifeTable2010_20, aes(Age, log(m.0))) +
+  geom_line() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Age",
+    y = "log(m)",
+    title = "Age vs log(m) : Male"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+g2 <- ggplot(lifeTable2010_20, aes(Age, log(m.1))) +
+  geom_line() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    x = "Age",
+    y = "log(m)",
+    title = "Age vs log(m) : Female"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+gridExtra::grid.arrange(g1, g2, ncol = 2)
+```
+
+
+
+# f) Gompertz Q-Q plot
+
+```{r}
+lifeTable2010$l.0[1];lifeTable2010$l.1[1] # l0 값 확인
+```
+
+```{r}
+# S(x) 계산(x=1, ..., 99)
+df_QQ <- lifeTable2010 %>% 
+  mutate(S.0=l.0/100000, S.1=l.1/100000) %>% 
+  slice(2:100) %>% 
+  select(Age, S.0, S.1) %>%
+  mutate(QQ0=log(-log(S.0)), QQ1=log(-log(S.1)))
+
+df_QQ %>%
+  ggplot(aes(x=Age))+
+  geom_point(aes(y=QQ0), color='pink')+
+  geom_point(aes(y=QQ1), color='darkgreen') +
+  geom_smooth(aes(y=QQ0), method = "lm", se = FALSE, color = "orange")+
+  geom_smooth(aes(y=QQ1), method = "lm", se = FALSE, color = "darkblue") +
+  labs(title="Q-Q plot", y='QQ') +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+```{r}
+QQ1 <- df_QQ %>%
+  ggplot(aes(x=Age,y=QQ0))+
+  geom_point(color='black')+
+  geom_smooth(method = "lm", se = FALSE, color = "orange")+
+  labs(title="Q-Q plot : Male", y='QQ') +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+QQ2 <- df_QQ %>%
+  ggplot(aes(x=Age, y=QQ1))+
+  geom_point(color='black')+
+  geom_smooth(method = "lm", se = FALSE, color = "orange")+
+  labs(title="Q-Q plot : Female", y='QQ') +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+grid.arrange(QQ1, QQ2, ncol=2)
+```
+```{r}
+# X > 40
+QQ3 <- df_QQ %>%
+  slice(40:100) %>%
+  ggplot(aes(x=Age,y=QQ0))+
+  geom_point(color='black')+
+  geom_smooth(method = "lm", se = FALSE, color = "orange")+
+  labs(title="Q-Q plot : Male", y='QQ') +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+QQ4 <- df_QQ %>%
+  slice(40:100) %>%
+  ggplot(aes(x=Age, y=QQ1))+
+  geom_point(color='black')+
+  geom_smooth(method = "lm", se = FALSE, color = "orange")+
+  labs(title="Q-Q plot : Female", y='QQ') +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+grid.arrange(QQ3, QQ4, ncol=2)
+```
+```{r}
+df_estimate <- df_QQ %>%slice(42:100)
+
+# 회귀모형 
+lmf.M <- lm(Age ~ QQ0, data=df_estimate)
+lmf.F <- lm(Age ~ QQ1, data=df_estimate)
+
+# (mu, sigma)
+res1.f <- data.frame(Sex=c("M", "F"),
+           mu = round(c(summary(lmf.M)$coefficients[1,1], summary(lmf.F)$coefficients[1,1]),4),
+           sigma = round(c(summary(lmf.M)$coefficients[2,1], summary(lmf.F)$coefficients[2,1]),4)
+           )
+res1.f
+```
+
+```{r}
+# (a, b)
+res2.f <- res1.f %>% 
+  mutate(b=1/sigma, a=log(b)-mu/sigma) %>%
+  select(Sex, a,b)
+
+
+# 결과 비교 : e) v.s. f)
+merge(coef.e, res2.f, by='Sex')
+```
+
+# g) 최대수명 계산
+
+```{r}
+# 한계 수명
+df_g <- lifeTable2010 %>% slice(22:101) %>% select(Age, q.0, q.1)
+lmg.M <- lm(log(q.0)~Age, data=df_g)
+lmg.F <- lm(log(q.1)~Age, data=df_g)
+
+res1.g <- data.frame(Sex=c("M", "F"),
+           a = round(c(summary(lmg.M)$coefficients[1,1], summary(lmg.F)$coefficients[1,1]),4),
+           b = round(c(summary(lmg.M)$coefficients[2,1], summary(lmg.F)$coefficients[2,1]),4)
+           )
+
+x_bar.M <- -res1.g$a[res1.g$Sex=="M"]/res1.g$b[res1.g$Sex=="M"]
+x_bar.F <- -res1.g$a[res1.g$Sex=="F"]/res1.g$b[res1.g$Sex=="F"]
+
+x_bar.M; x_bar.F
+```
+
+```{r}
+# 최대 수명
+mu.M <- res1.f$mu[1]; sigma.M <- res1.f$sigma[1]
+mu.F <- res1.f$mu[2]; sigma.F <- res1.f$sigma[2]
+
+res2.g <- data.frame(n=c(100000, 500000, 1000000, 100000000, 6000000000)) %>%
+  mutate(xn.M = mu.M+sigma.M*(log(log(n+1))),
+         xn.F = mu.F+sigma.F*(log(log(n+1))))
+
+res2.g
+```
+

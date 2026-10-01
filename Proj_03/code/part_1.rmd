@@ -1,0 +1,415 @@
+---
+title: "Untitled"
+author: "262STG09_조유나"
+date: "2026-09-27"
+output: word_document
+---
+
+
+
+```{r}
+# ============================================================
+# Project #3 - Part (1)
+# 경험생명표(Complete Life Table) 작성
+# ============================================================
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# ------------------------------------------------------------
+# 1. 데이터 불러오기
+# ------------------------------------------------------------
+
+pop <- read.csv(
+  "시군구_성_연령_1세_별_주민등록연앙인구.csv",
+  header = TRUE,
+  skip = 2,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "CP949"
+)
+
+names(pop)
+head(pop)
+
+death <- read.csv(
+  "시도_성_연령_각세_별_사망자수.csv",
+  header = TRUE,
+  skip = 1,
+  fileEncoding = "CP949",
+  check.names = FALSE
+)
+
+# 데이터 구조 확인
+names(death)
+head(death)
+
+
+# ------------------------------------------------------------
+# 2. 0~99세 인구자료 P_x 추출
+# ------------------------------------------------------------
+
+pop_0_99 <- pop %>%
+  filter(grepl("^[0-9]+세$", 연령별)) %>%
+  mutate(
+    age = as.numeric(sub("세", "", 연령별)),
+    P_male = as.numeric(남자),
+    P_female = as.numeric(여자)
+  ) %>%
+  filter(age <= 99) %>%
+  select(age, P_male, P_female)
+
+head(pop_0_99)
+tail(pop_0_99)
+
+
+# ------------------------------------------------------------
+# 3. 0~99세 사망자수 D_x 추출
+# ------------------------------------------------------------
+
+death_0_99 <- death %>%
+  filter(grepl("^[0-9]+세$", `연령(5세,각세)별`)) %>%
+  mutate(
+    age = as.numeric(sub("세", "", `연령(5세,각세)별`)),
+    D_male = as.numeric(남자),
+    D_female = as.numeric(여자)
+  ) %>%
+  filter(age <= 99) %>%
+  select(age, D_male, D_female)
+
+head(death_0_99)
+tail(death_0_99)
+
+
+# ------------------------------------------------------------
+# 4. P_x와 D_x 결합
+# ------------------------------------------------------------
+
+data_2010 <- pop_0_99 %>%
+  left_join(death_0_99, by = "age")
+
+head(data_2010)
+
+dim(data_2010)
+summary(data_2010)
+
+
+# ============================================================
+# 5. 경험생명표 계산 함수
+# ============================================================
+
+make_life_table <- function(P, D, gender) {
+  
+  n <- length(P)
+  
+  # 0. 사망률
+  m <- D / P
+  
+  # 1. 사망확률
+  q <- m / (1 + m / 2)
+  
+  # 2. 생존자수
+  l <- numeric(n + 1)
+  l[1] <- 100000
+  
+  for (x in 1:n) {
+    l[x + 1] <- l[x] * (1 - q[x])
+  }
+  
+  # 3. 사망자수
+  d <- l[1:n] - l[2:(n + 1)]
+  
+  # 4. 정지인구
+  L <- (l[1:n] + l[2:(n + 1)]) / 2
+  
+  # 5. T_x
+  T <- numeric(n)
+  
+  for (x in 1:n) {
+    T[x] <- sum(L[x:n])
+  }
+  
+  # 6. 기대여명
+  e <- T / l[1:n]
+  
+  # 생명표
+  life_table <- data.frame(
+    gender = gender,
+    age = 0:(n - 1),
+    P_x = P,
+    D_x = D,
+    m_x = m,
+    q_x = q,
+    l_x = l[1:n],
+    d_x = d,
+    L_x = L,
+    T_x = T,
+    e_x = e
+  )
+  
+  return(life_table)
+}
+
+
+# ------------------------------------------------------------
+# 6. 남녀별 경험생명표 작성
+# ------------------------------------------------------------
+
+life_male <- make_life_table(
+  P = data_2010$P_male,
+  D = data_2010$D_male,
+  gender = "Male"
+)
+
+life_female <- make_life_table(
+  P = data_2010$P_female,
+  D = data_2010$D_female,
+  gender = "Female"
+)
+
+# 결과 확인
+head(life_male)
+head(life_female)
+
+
+life_table <- bind_rows(
+  life_male,
+  life_female
+)
+
+head(life_table)
+
+
+# ============================================================
+# 9. 인구 피라미드
+# ============================================================
+
+pyramid_data <- pop_0_99 %>%
+  pivot_longer(
+    cols = c(P_male, P_female),
+    names_to = "sex",
+    values_to = "population"
+  ) %>%
+  mutate(
+    sex = recode(
+      sex,
+      P_male = "남자",
+      P_female = "여자"
+    ),
+    population = ifelse(sex == "남자", -population, population)
+  )
+
+ggplot(pyramid_data,
+       aes(x = age, y = population, fill = sex)) +
+  geom_col(width = 1) +
+  coord_flip() +
+  scale_y_continuous(
+    labels = function(x) format(abs(x), big.mark = ",", scientific = FALSE)
+  ) +
+  labs(
+    title = "2010년 남녀 연령별 인구 피라미드",
+    x = "연령",
+    y = "인구수",
+    fill = "성별"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r}
+official <- read.csv(
+  "완전생명표_1세별.csv",
+  header = TRUE,
+  skip = 1,
+  stringsAsFactors = FALSE,
+  check.names = FALSE,
+  fileEncoding = "CP949"
+)
+
+official_0_99 <- official %>%
+  filter(grepl("^[0-9]+세$", 연령별)) %>%
+  mutate(
+    age = as.numeric(sub("세", "", 연령별))
+  ) %>%
+  filter(age <= 99)
+
+life_table_official <- official_0_99 %>%
+  select(
+    age,
+    
+    q_male = `사망확률(남자)`,
+    l_male = `생존자(남자)`,
+    L_male = `정지인구(남자)`,
+    e_male = `기대여명(남자) (년)`,
+    
+    q_female = `사망확률(여자)`,
+    l_female = `생존자(여자)`,
+    L_female = `정지인구(여자)`,
+    e_female = `기대여명(여자) (년)`
+  )
+
+head(life_table_official)
+
+# ============================================================
+# 10. 계산값과 통계청 완전생명표 비교
+# ============================================================
+
+# ------------------------------------------------------------
+# 남성 비교 데이터
+# ------------------------------------------------------------
+
+compare_male <- life_male %>%
+  select(
+    age,
+    l_calculated = l_x,
+    L_calculated = L_x,
+    q_calculated = q_x,
+    e_calculated = e_x
+  ) %>%
+  left_join(
+    life_table_official %>%
+      select(
+        age,
+        l_actual = l_male,
+        L_actual = L_male,
+        q_actual = q_male,
+        e_actual = e_male
+      ),
+    by = "age"
+  )
+
+
+# ------------------------------------------------------------
+# 여성 비교 데이터
+# ------------------------------------------------------------
+
+compare_female <- life_female %>%
+  select(
+    age,
+    l_calculated = l_x,
+    L_calculated = L_x,
+    q_calculated = q_x,
+    e_calculated = e_x
+  ) %>%
+  left_join(
+    life_table_official %>%
+      select(
+        age,
+        l_actual = l_female,
+        L_actual = L_female,
+        q_actual = q_female,
+        e_actual = e_female
+      ),
+    by = "age"
+  )
+
+head(compare_male)
+head(compare_female)
+```
+
+
+
+```{r}
+# ============================================================
+# 11. 남성 생존자수 비교
+# ============================================================
+
+p1 <- ggplot(compare_male, aes(x = age)) +
+  geom_line(
+    aes(y = l_calculated, color = "계산"),
+    linewidth = 1.5,
+    alpha = 0.7
+  ) +
+  geom_line(
+    aes(y = l_actual, color = "통계청"),
+    linewidth = 1,
+    alpha = 0.6
+  ) +
+  labs(
+    title = "남성 생존자수 비교",
+    x = "나이",
+    y = "생존자수 (명)",
+    color = "구분"
+  ) +
+  theme_minimal()
+
+# ============================================================
+# 여성 생존자수 비교
+# ============================================================
+
+p2 <- ggplot(compare_female, aes(x = age)) +
+  geom_line(
+    aes(y = l_calculated, color = "계산"),
+    linewidth = 1.5,
+    alpha = 0.7
+  ) +
+  geom_line(
+    aes(y = l_actual, color = "통계청"),
+    linewidth = 1,
+    alpha = 0.6
+  ) +
+  labs(
+    title = "여성 생존자수 비교",
+    x = "나이",
+    y = "생존자수 (명)",
+    color = "구분"
+  ) +
+  theme_minimal()
+
+# ============================================================
+# 남성 기대여명 비교
+# ============================================================
+
+p3 <- ggplot(compare_male, aes(x = age)) +
+  geom_line(
+    aes(y = e_calculated, color = "계산"),
+    linewidth = 1.5,
+    alpha = 0.7
+  ) +
+  geom_line(
+    aes(y = e_actual, color = "통계청"),
+    linewidth = 1,
+    alpha = 0.6
+  ) +
+  labs(
+    title = "남성 기대여명 비교",
+    x = "나이",
+    y = "기대여명 (년)",
+    color = "구분"
+  ) +
+  theme_minimal()
+
+# ============================================================
+# 여성 기대여명 비교
+# ============================================================
+
+p4 <- ggplot(compare_female, aes(x = age)) +
+  geom_line(
+    aes(y = e_calculated, color = "계산"),
+    linewidth = 1.5,
+    alpha = 0.7
+  ) +
+  geom_line(
+    aes(y = e_actual, color = "통계청"),
+    linewidth = 1,
+    alpha = 0.6
+  ) +
+  labs(
+    title = "여성 기대여명 비교",
+    x = "나이",
+    y = "기대여명 (년)",
+    color = "구분"
+  ) +
+  theme_minimal()
+
+
+library(patchwork)
+
+(p1 | p2) /
+(p3 | p4)
+```
+
+
+
